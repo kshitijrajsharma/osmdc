@@ -401,6 +401,7 @@ function wireUI() {
   if (!ROADS_ENABLED) {
     el("metric").querySelector('option[value="road_pct"]')?.remove();
     el("stat-road").hidden = true;
+    el("modal-road").hidden = true;
   }
 }
 

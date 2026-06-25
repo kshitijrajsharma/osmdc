@@ -5,25 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OSM Completeness Helper</title>
     <link rel="icon" href="data:," />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Barlow:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/maplibre-gl@4/dist/maplibre-gl.css"
     />
     <style>
       :root {
-        --bg: #f8fafc;
+        --bg: #fbfbfb;
         --panel: #ffffff;
-        --line: #e2e8f0;
-        --text: #1e293b;
-        --muted: #64748b;
-        --accent: #2563eb;
+        --line: #e5e7eb;
+        --text: #2c3038;
+        --muted: #6b7280;
+        --accent: #d73f3f;
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color: var(--text); }
+      html, body { margin: 0; height: 100%; font-family: "Barlow", system-ui, sans-serif; color: var(--text); }
+      h1, .modal h2, .modal h3 { font-family: "Archivo", system-ui, sans-serif; }
       #app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
       #panel { background: var(--panel); border-right: 1px solid var(--line); padding: 18px; overflow-y: auto; }
       #map-wrap { position: relative; height: 100%; }
       #map { position: absolute; inset: 0; }
+      .header-row { display: flex; justify-content: space-between; align-items: center; }
       h1 { font-size: 16px; margin: 0 0 2px; }
       .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
       #drop {
@@ -73,12 +81,16 @@
       #layers { position: absolute; top: 10px; right: 10px; z-index: 5; background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); font-size: 12px; }
       #layers label { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text); }
       #layers label + label { margin-top: 5px; }
+      #layers input[type="checkbox"] { accent-color: var(--accent); }
     </style>
   </head>
   <body>
     <div id="app">
       <aside id="panel">
-        <h1>OSM Completeness Helper</h1>
+        <div class="header-row">
+          <h1>OSM Completeness Helper</h1>
+          <button id="info-btn" title="How it's calculated" aria-label="How it's calculated">i</button>
+        </div>
         <div class="sub">How much of an area is already in OpenStreetMap?</div>
 
         <div id="search-box">
@@ -117,7 +129,6 @@
         <div class="stats" id="stats" hidden>
           <div class="stat-head">
             <span>Summary</span>
-            <button id="info-btn" title="How is this calculated?" aria-label="How is this calculated?">i</button>
           </div>
           <div class="stat"><span>H3 cells</span><b id="s-cells">0</b></div>
           <div class="stat"><span>Buildings</span><b id="s-bld">0</b></div>
@@ -165,16 +176,18 @@
           means buildings are present (from the machine-learning sources) that
           OpenStreetMap is missing, a mapping gap.
         </p>
-        <h3>Road completeness</h3>
-        <p>
-          The share of road segments in the hexagon that carry an OpenStreetMap source.
-        </p>
-        <p>
-          Caveat: Overture's road network is mostly OpenStreetMap, with only a small amount
-          from TomTom and other sources. Because the reference is largely OpenStreetMap
-          itself, road completeness reads high almost everywhere. A high value means the
-          roads match Overture's reference, not that every road on the ground is mapped.
-        </p>
+        <div id="modal-road">
+          <h3>Road completeness</h3>
+          <p>
+            The share of road segments in the hexagon that carry an OpenStreetMap source.
+          </p>
+          <p>
+            Caveat: Overture's road network is mostly OpenStreetMap, with only a small amount
+            from TomTom and other sources. Because the reference is largely OpenStreetMap
+            itself, road completeness reads high almost everywhere. A high value means the
+            roads match Overture's reference, not that every road on the ground is mapped.
+          </p>
+        </div>
         <h3>Mapping gap</h3>
         <p>
           Population comes from the Kontur Population dataset (H3 resolution 8, 2023).
