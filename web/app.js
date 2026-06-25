@@ -47,12 +47,44 @@ function ramp(t) {
 
 let map, overlay, db, manifest, currentRows = [];
 
+const BASEMAP_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: "© OpenStreetMap contributors",
+    },
+    esri: {
+      type: "raster",
+      tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: "Imagery © Esri, Maxar",
+    },
+  },
+  layers: [
+    { id: "osm", type: "raster", source: "osm" },
+    { id: "esri", type: "raster", source: "esri", layout: { visibility: "none" } },
+  ],
+};
+
+function setBasemap(name) {
+  map.setLayoutProperty("osm", "visibility", name === "osm" ? "visible" : "none");
+  map.setLayoutProperty("esri", "visibility", name === "esri" ? "visible" : "none");
+  for (const button of document.querySelectorAll("#basemap-switch button")) {
+    button.classList.toggle("active", button.dataset.base === name);
+  }
+}
+
 async function initMap() {
   await loadScript("https://cdn.jsdelivr.net/npm/deck.gl@9/dist.min.js");
   ({ MapboxOverlay, H3HexagonLayer } = window.deck);
   map = new maplibregl.Map({
     container: "map",
-    style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+    style: BASEMAP_STYLE,
     center: [85.32, 27.71],
     zoom: 10,
     hash: true,
@@ -185,7 +217,10 @@ function render(rows) {
     getTooltip: ({ object }) =>
       object && {
         html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km${ROADS_ENABLED ? ` (${object.road_pct ?? "-"}% in OSM)` : ""}<br/>population: ${object.population.toLocaleString()} (gap ${object.gap_score.toLocaleString()})`,
-        style: { background: "#111827", color: "#e5e7eb", fontSize: "12px", padding: "6px" },
+        style: {
+          background: "#ffffff", color: "#1e293b", fontSize: "12px", padding: "6px",
+          borderRadius: "4px", boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        },
       },
   });
 }
@@ -340,6 +375,9 @@ function wireUI() {
   el("download").addEventListener("click", downloadGeoJSON);
   el("sample").addEventListener("click", () => process(SAMPLE));
   el("assess").addEventListener("click", assessView);
+  for (const button of document.querySelectorAll("#basemap-switch button")) {
+    button.addEventListener("click", () => setBasemap(button.dataset.base));
+  }
 
   const search = el("search");
   let searchTimer;
