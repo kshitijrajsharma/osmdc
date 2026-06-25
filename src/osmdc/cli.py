@@ -1,0 +1,104 @@
+"""Command line entrypoint for the aggregation pipeline."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from osmdc import config
+from osmdc.aggregate import BoundingBox, aggregate_tile, connect, merge_chunks, run_global
+from osmdc.publish import publish_tiles
+
+
+def _add_throttle_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--threads", type=int, default=None, help="cap DuckDB worker threads")
+    parser.add_argument("--memory-limit", default=None, help="DuckDB memory cap, e.g. 16GB")
+    parser.add_argument("--temp-dir", default=None, help="directory for DuckDB spill files")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="osmdc", description="Overture to H3 completeness tiles")
+    parser.add_argument(
+        "--bbox",
+        type=float,
+        nargs=4,
+        required=True,
+        metavar=("WEST", "SOUTH", "EAST", "NORTH"),
+        help="bounding box in lon/lat degrees",
+    )
+    parser.add_argument("--out", type=Path, required=True, help="output tile directory")
+    parser.add_argument("--resolution", type=int, default=config.H3_RESOLUTION)
+    parser.add_argument("--partition-resolution", type=int, default=config.PARTITION_RESOLUTION)
+    _add_throttle_args(parser)
+    return parser
+
+
+def build_planet_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="osmdc-planet", description="Chunked, resumable global Overture to H3 aggregation"
+    )
+    parser.add_argument("--out", type=Path, required=True, help="merged browser tile directory")
+    parser.add_argument("--chunk-dir", type=Path, required=True, help="per-chunk scratch directory")
+    parser.add_argument("--lon-min", type=float, default=-180.0)
+    parser.add_argument("--lon-max", type=float, default=180.0)
+    parser.add_argument("--lat-min", type=float, default=-60.0)
+    parser.add_argument("--lat-max", type=float, default=84.0)
+    parser.add_argument("--lon-step", type=float, default=360.0)
+    parser.add_argument("--lat-step", type=float, default=12.0)
+    parser.add_argument("--resolution", type=int, default=config.H3_RESOLUTION)
+    parser.add_argument("--partition-resolution", type=int, default=config.PARTITION_RESOLUTION)
+    parser.add_argument(
+        "--merge-only",
+        action="store_true",
+        help="skip the chunk scan and only merge existing chunks into tiles",
+    )
+    _add_throttle_args(parser)
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    bbox = BoundingBox(*args.bbox)
+    con = connect(args.threads, args.memory_limit, args.temp_dir)
+    cells = aggregate_tile(con, bbox, args.out, args.resolution, args.partition_resolution)
+    print(f"wrote {cells} cells to {args.out}")
+
+
+def publish_main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="osmdc-publish", description="Upload tiles to a Hugging Face dataset"
+    )
+    parser.add_argument("--tiles", type=Path, required=True, help="merged tile directory")
+    parser.add_argument("--repo", required=True, help="HF dataset id, e.g. user/name")
+    parser.add_argument("--token", default=None, help="HF token (defaults to cached login)")
+    args = parser.parse_args()
+    url = publish_tiles(args.tiles, args.repo, args.token)
+    print(f"published to {url}")
+
+
+def planet_main() -> None:
+    args = build_planet_parser().parse_args()
+    con = connect(args.threads, args.memory_limit, args.temp_dir)
+    if args.merge_only:
+        cells = merge_chunks(
+            con, args.chunk_dir, args.out, args.resolution, args.partition_resolution
+        )
+        print(f"merged {cells} cells to {args.out}")
+        return
+    run_global(
+        con,
+        args.out,
+        args.chunk_dir,
+        lon_min=args.lon_min,
+        lon_max=args.lon_max,
+        lat_min=args.lat_min,
+        lat_max=args.lat_max,
+        lon_step=args.lon_step,
+        lat_step=args.lat_step,
+        resolution=args.resolution,
+        partition_resolution=args.partition_resolution,
+    )
+
+
+if __name__ == "__main__":
+    main()

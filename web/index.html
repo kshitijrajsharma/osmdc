@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSM Completeness Helper</title>
+    <link rel="icon" href="data:," />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/maplibre-gl@4/dist/maplibre-gl.css"
+    />
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --line: #1f2937;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #38bdf8;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; color: var(--text); }
+      #app { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+      #panel { background: var(--panel); border-right: 1px solid var(--line); padding: 18px; overflow-y: auto; }
+      #map { height: 100%; }
+      h1 { font-size: 16px; margin: 0 0 2px; }
+      .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+      #drop {
+        border: 1.5px dashed #334155; border-radius: 10px; padding: 22px 12px; text-align: center;
+        color: var(--muted); font-size: 13px; cursor: pointer; transition: 0.15s;
+      }
+      #drop.hover { border-color: var(--accent); color: var(--text); background: #0b1220; }
+      .row { display: flex; gap: 8px; margin-top: 10px; }
+      button, select {
+        background: #1e293b; color: var(--text); border: 1px solid var(--line);
+        border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; width: 100%;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button.primary { background: var(--accent); color: #06283d; border-color: var(--accent); font-weight: 600; }
+      label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
+      .stats { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; }
+      .stat { display: flex; justify-content: space-between; padding: 4px 0; }
+      .stat b { font-variant-numeric: tabular-nums; }
+      #legend { margin-top: 16px; font-size: 11px; color: var(--muted); }
+      #bar { height: 10px; border-radius: 5px; margin: 6px 0; background: linear-gradient(90deg, #d73027, #fee08b, #1a9850); }
+      #status { margin-top: 14px; font-size: 12px; color: var(--muted); min-height: 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <h1>OSM Completeness Helper</h1>
+        <div class="sub">Drop an area, see how much is in OpenStreetMap.</div>
+
+        <div id="drop">
+          Drag &amp; drop a GeoJSON polygon<br />or click to choose a file
+          <input id="file" type="file" accept=".geojson,.json" hidden />
+        </div>
+        <div class="row">
+          <button id="sample">Try a sample area</button>
+        </div>
+
+        <label for="layer">Layer</label>
+        <select id="layer">
+          <option value="buildings">Buildings</option>
+          <option value="highways">Highways</option>
+        </select>
+
+        <label for="metric">Colour by</label>
+        <select id="metric">
+          <option value="osm_pct">Building completeness (% in OSM)</option>
+          <option value="bld_count">Building density (count)</option>
+        </select>
+
+        <div id="legend">
+          <span id="legend-label">Completeness</span>
+          <div id="bar"></div>
+          <div class="row" style="justify-content: space-between; margin-top: 0">
+            <span id="legend-min">low</span><span id="legend-max">high</span>
+          </div>
+        </div>
+
+        <div class="stats" id="stats" hidden>
+          <div class="stat"><span>H3 cells</span><b id="s-cells">0</b></div>
+          <div class="stat"><span>Buildings</span><b id="s-bld">0</b></div>
+          <div class="stat"><span>In OSM</span><b id="s-osm">0</b></div>
+          <div class="stat"><span>Overall completeness</span><b id="s-pct">0%</b></div>
+          <div class="stat"><span>Road length</span><b id="s-km">0 km</b></div>
+        </div>
+
+        <div class="row">
+          <button id="download" class="primary" disabled>Download result GeoJSON</button>
+        </div>
+        <div id="status"></div>
+      </aside>
+      <div id="map"></div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
