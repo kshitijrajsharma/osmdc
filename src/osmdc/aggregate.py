@@ -87,6 +87,7 @@ def _cells_query(
     roads AS (
         SELECT {cell} AS cell,
                count(*) AS road_count,
+               count(*) FILTER (WHERE {osm_present}) AS road_osm,
                sum(CASE WHEN isfinite(ST_Length_Spheroid(geometry))
                         THEN ST_Length_Spheroid(geometry) ELSE 0 END) AS road_len_m
         FROM read_parquet('{segments_path}', hive_partitioning=1)
@@ -98,6 +99,7 @@ def _cells_query(
                coalesce(bld_count, 0) AS bld_count,
                coalesce(bld_osm, 0) AS bld_osm,
                coalesce(road_count, 0) AS road_count,
+               coalesce(road_osm, 0) AS road_osm,
                coalesce(road_len_m, 0.0) AS road_len_m
         FROM buildings FULL OUTER JOIN roads ON buildings.cell = roads.cell
     )
@@ -107,6 +109,8 @@ def _cells_query(
            bld_osm,
            round(bld_osm * 100.0 / nullif(bld_count, 0), 1) AS osm_pct,
            road_count,
+           road_osm,
+           round(road_osm * 100.0 / nullif(road_count, 0), 1) AS road_pct,
            round(road_len_m, 1) AS road_len_m
     FROM merged
     """
@@ -208,6 +212,7 @@ def _raw_chunk_query(
     roads AS (
         SELECT {cell} AS cell,
                count(*) AS road_count,
+               count(*) FILTER (WHERE {osm_present}) AS road_osm,
                sum(CASE WHEN isfinite(ST_Length_Spheroid(geometry))
                         THEN ST_Length_Spheroid(geometry) ELSE 0 END) AS road_len_m
         FROM read_parquet('{segments_path}', hive_partitioning=1)
@@ -219,12 +224,13 @@ def _raw_chunk_query(
                coalesce(bld_count, 0) AS bld_count,
                coalesce(bld_osm, 0) AS bld_osm,
                coalesce(road_count, 0) AS road_count,
+               coalesce(road_osm, 0) AS road_osm,
                coalesce(road_len_m, 0.0) AS road_len_m
         FROM buildings FULL OUTER JOIN roads ON buildings.cell = roads.cell
     )
     SELECT h3_h3_to_string(cell) AS h3,
            h3_h3_to_string(h3_cell_to_parent(cell, {partition_resolution})) AS h3_parent,
-           bld_count, bld_osm, road_count, road_len_m
+           bld_count, bld_osm, road_count, road_osm, road_len_m
     FROM merged
     """
 
@@ -248,6 +254,8 @@ def merge_chunks(
                sum(bld_osm) AS bld_osm,
                round(sum(bld_osm) * 100.0 / nullif(sum(bld_count), 0), 1) AS osm_pct,
                sum(road_count) AS road_count,
+               sum(road_osm) AS road_osm,
+               round(sum(road_osm) * 100.0 / nullif(sum(road_count), 0), 1) AS road_pct,
                round(
                    sum(CASE WHEN isfinite(road_len_m) THEN road_len_m ELSE 0 END), 1
                ) AS road_len_m

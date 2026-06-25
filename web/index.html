@@ -44,6 +44,17 @@
       #legend { margin-top: 16px; font-size: 11px; color: var(--muted); }
       #bar { height: 10px; border-radius: 5px; margin: 6px 0; background: linear-gradient(90deg, #d73027, #fee08b, #1a9850); }
       #status { margin-top: 14px; font-size: 12px; color: var(--muted); min-height: 16px; }
+      .stat-head { display: flex; justify-content: space-between; align-items: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
+      #info-btn { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: #1e293b; color: var(--accent); font-style: italic; font-size: 11px; line-height: 1; cursor: pointer; }
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 10; }
+      .modal-overlay.open { display: flex; }
+      .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; max-width: 520px; max-height: 80vh; overflow-y: auto; padding: 22px 24px; font-size: 13px; line-height: 1.55; }
+      .modal h2 { font-size: 15px; margin: 0 0 12px; }
+      .modal h3 { font-size: 13px; margin: 16px 0 4px; }
+      .modal p { margin: 6px 0; color: #cbd5e1; }
+      .modal code { background: #1e293b; padding: 1px 5px; border-radius: 4px; }
+      .modal a { color: var(--accent); }
+      .modal-close { float: right; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; }
     </style>
   </head>
   <body>
@@ -60,31 +71,29 @@
           <button id="sample">Try a sample area</button>
         </div>
 
-        <label for="layer">Layer</label>
-        <select id="layer">
-          <option value="buildings">Buildings</option>
-          <option value="highways">Highways</option>
-        </select>
-
         <label for="metric">Colour by</label>
         <select id="metric">
           <option value="osm_pct">Building completeness (% in OSM)</option>
-          <option value="bld_count">Building density (count)</option>
+          <option value="road_pct">Road completeness (% in OSM)</option>
         </select>
 
         <div id="legend">
           <span id="legend-label">Completeness</span>
           <div id="bar"></div>
           <div class="row" style="justify-content: space-between; margin-top: 0">
-            <span id="legend-min">low</span><span id="legend-max">high</span>
+            <span id="legend-min">0%</span><span id="legend-max">100%</span>
           </div>
         </div>
 
         <div class="stats" id="stats" hidden>
+          <div class="stat-head">
+            <span>Summary</span>
+            <button id="info-btn" title="How is this calculated?" aria-label="How is this calculated?">i</button>
+          </div>
           <div class="stat"><span>H3 cells</span><b id="s-cells">0</b></div>
           <div class="stat"><span>Buildings</span><b id="s-bld">0</b></div>
-          <div class="stat"><span>In OSM</span><b id="s-osm">0</b></div>
-          <div class="stat"><span>Overall completeness</span><b id="s-pct">0%</b></div>
+          <div class="stat"><span>Buildings in OSM</span><b id="s-pct">0%</b></div>
+          <div class="stat"><span>Roads in OSM</span><b id="s-road-pct">0%</b></div>
           <div class="stat"><span>Road length</span><b id="s-km">0 km</b></div>
         </div>
 
@@ -95,6 +104,43 @@
       </aside>
       <div id="map"></div>
     </div>
+
+    <div class="modal-overlay" id="info-modal">
+      <div class="modal">
+        <button class="modal-close" id="info-close" aria-label="Close">&times;</button>
+        <h2>How completeness is calculated</h2>
+        <p>
+          The reference is
+          <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>,
+          which merges OpenStreetMap with machine-learning building footprints from
+          Microsoft, Google and Esri. Each Overture feature records which sources it
+          came from. Completeness asks: of everything Overture knows about in an area,
+          how much is already in OpenStreetMap.
+        </p>
+        <h3>Building completeness</h3>
+        <p>
+          For each hexagon, <code>buildings in OSM / total Overture buildings</code>.
+          A high value means OpenStreetMap already has most of what exists. A low value
+          means buildings are present (from the machine-learning sources) that
+          OpenStreetMap is missing, a mapping gap.
+        </p>
+        <h3>Road completeness</h3>
+        <p>
+          The share of road segments in the hexagon that carry an OpenStreetMap source.
+          Overture road data is almost entirely OpenStreetMap derived, so this stays high
+          across most of the world.
+        </p>
+        <h3>The grid</h3>
+        <p>
+          Features are counted in H3 resolution 8 hexagons (about 0.7 km² each).
+          A dropped polygon is matched to the hexagons it covers.
+        </p>
+        <p>
+          Data: © OpenStreetMap contributors, Overture Maps Foundation.
+        </p>
+      </div>
+    </div>
+
     <script type="module" src="./app.js"></script>
   </body>
 </html>

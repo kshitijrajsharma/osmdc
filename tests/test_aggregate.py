@@ -27,6 +27,7 @@ def _write_fixture(con: duckdb.DuckDBPyConnection, tmp_path: Path) -> tuple[str,
         COPY (SELECT
             ST_GeomFromText('LINESTRING(85.3100 27.7100, 85.3105 27.7100)') AS geometry,
             'road' AS subtype,
+            [struct_pack(dataset := 'OpenStreetMap')] AS sources,
             struct_pack(xmin := 85.3100::DOUBLE, xmax := 85.3105::DOUBLE,
                         ymin := 27.7100::DOUBLE, ymax := 27.7101::DOUBLE) AS bbox
         ) TO '{segments}' (FORMAT PARQUET)
@@ -58,14 +59,15 @@ def test_aggregate_tile_counts_osm_share(tmp_path):
     assert list(out_dir.glob("h3_parent=*/*.parquet"))
 
     totals = con.execute(f"""
-        SELECT sum(bld_count), sum(bld_osm), sum(road_count), sum(road_len_m)
+        SELECT sum(bld_count), sum(bld_osm), sum(road_count), sum(road_osm), sum(road_len_m)
         FROM read_parquet('{out_dir}/**/*.parquet')
     """).fetchone()
     assert totals is not None
     assert totals[0] == 3
     assert totals[1] == 2
     assert totals[2] == 1
-    assert totals[3] > 0
+    assert totals[3] == 1  # the one road carries an OpenStreetMap source
+    assert totals[4] > 0
 
 
 def test_iter_chunks_covers_range_without_overlap():
@@ -84,7 +86,8 @@ def test_merge_sums_border_cells(tmp_path):
         con.execute(f"""
             COPY (SELECT '8abc' AS h3, '82' AS h3_parent,
                          {bld}::BIGINT AS bld_count, {osm}::BIGINT AS bld_osm,
-                         0::BIGINT AS road_count, 0.0 AS road_len_m)
+                         {bld}::BIGINT AS road_count, {osm}::BIGINT AS road_osm,
+                         0.0 AS road_len_m)
             TO '{chunk_dir / name}.parquet' (FORMAT PARQUET)
         """)
     out_dir = tmp_path / "out"
@@ -92,9 +95,11 @@ def test_merge_sums_border_cells(tmp_path):
 
     assert cells == 1  # same h3 from both chunks collapses to one row
     row = con.execute(
-        f"SELECT bld_count, bld_osm, osm_pct FROM read_parquet('{out_dir}/**/*.parquet')"
+        "SELECT bld_count, bld_osm, osm_pct, road_count, road_osm, road_pct "
+        f"FROM read_parquet('{out_dir}/**/*.parquet')"
     ).fetchone()
     assert row is not None
     assert row[0] == 8
     assert row[1] == 3
     assert row[2] == 37.5
+    assert (row[3], row[4], row[5]) == (8, 3, 37.5)

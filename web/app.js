@@ -2,7 +2,7 @@ import maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@4/+esm";
 import * as h3 from "https://cdn.jsdelivr.net/npm/h3-js@4/+esm";
 import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm";
 
-// deck.gl's H3HexagonLayer reads h3-js 
+// deck.gl reads h3-js from the global scope, so it must be set before deck.gl loads.
 window.h3 = h3;
 let MapboxOverlay, H3HexagonLayer;
 
@@ -127,30 +127,23 @@ async function queryTiles(parents) {
       bld_osm: Number(o.bld_osm),
       osm_pct: o.osm_pct == null ? null : Number(o.osm_pct),
       road_count: Number(o.road_count),
+      road_osm: o.road_osm == null ? 0 : Number(o.road_osm),
+      road_pct: o.road_pct == null ? null : Number(o.road_pct),
       road_len_m: Number(o.road_len_m),
     };
   });
 }
 
 function metricValue(d) {
-  const layer = el("layer").value;
-  const metric = el("metric").value;
-  if (layer === "highways") return d.road_len_m / 1000;
-  if (metric === "osm_pct") return d.osm_pct;
-  return d.bld_count;
+  return d[el("metric").value];
 }
 
-function normaliser(rows) {
-  const metric = el("metric").value;
-  const layer = el("layer").value;
-  if (layer === "buildings" && metric === "osm_pct") return (v) => (v == null ? null : v / 100);
-  let max = 0;
-  for (const d of rows) max = Math.max(max, metricValue(d) || 0);
-  return (v) => (v == null || max === 0 ? null : v / max);
+// Both metrics are percentages, so they share a fixed 0..100 colour scale.
+function normalise(value) {
+  return value == null ? null : value / 100;
 }
 
 function render(rows) {
-  const norm = normaliser(rows);
   const layer = new H3HexagonLayer({
     id: "cells",
     data: rows,
@@ -163,32 +156,34 @@ function render(rows) {
     opacity: 0.72,
     pickable: true,
     getFillColor: (d) => {
-      const t = norm(metricValue(d));
+      const t = normalise(metricValue(d));
       return t == null ? [80, 80, 80, 120] : [...ramp(t), 200];
     },
-    updateTriggers: { getFillColor: [el("layer").value, el("metric").value] },
+    updateTriggers: { getFillColor: [el("metric").value] },
   });
   overlay.setProps({
     layers: [layer],
     getTooltip: ({ object }) =>
       object && {
-        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km`,
+        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km (${object.road_pct ?? "-"}% in OSM)`,
         style: { background: "#111827", color: "#e5e7eb", fontSize: "12px", padding: "6px" },
       },
   });
 }
 
 function showStats(rows) {
-  let bld = 0, osm = 0, km = 0;
+  let bld = 0, bldOsm = 0, road = 0, roadOsm = 0, km = 0;
   for (const d of rows) {
     bld += d.bld_count;
-    osm += d.bld_osm;
+    bldOsm += d.bld_osm;
+    road += d.road_count;
+    roadOsm += d.road_osm;
     km += d.road_len_m / 1000;
   }
   el("s-cells").textContent = rows.length.toLocaleString();
   el("s-bld").textContent = bld.toLocaleString();
-  el("s-osm").textContent = osm.toLocaleString();
-  el("s-pct").textContent = bld ? `${((osm / bld) * 100).toFixed(1)}%` : "-";
+  el("s-pct").textContent = bld ? `${((bldOsm / bld) * 100).toFixed(1)}%` : "-";
+  el("s-road-pct").textContent = road ? `${((roadOsm / road) * 100).toFixed(1)}%` : "-";
   el("s-km").textContent = `${km.toFixed(1)} km`;
   el("stats").hidden = false;
 }
@@ -255,25 +250,23 @@ function wireUI() {
   drop.addEventListener("drop", (e) => e.dataTransfer.files[0] && readFile(e.dataTransfer.files[0]));
 
   const rerender = () => currentRows.length && (render(currentRows), updateLegend());
-  el("layer").addEventListener("change", () => { syncMetricOptions(); rerender(); });
   el("metric").addEventListener("change", rerender);
   el("download").addEventListener("click", downloadGeoJSON);
   el("sample").addEventListener("click", () => process(SAMPLE));
-}
 
-function syncMetricOptions() {
-  const highways = el("layer").value === "highways";
-  el("metric").disabled = highways;
-  updateLegend();
+  const modal = el("info-modal");
+  el("info-btn").addEventListener("click", () => modal.classList.add("open"));
+  el("info-close").addEventListener("click", () => modal.classList.remove("open"));
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.remove("open");
+  });
 }
 
 function updateLegend() {
-  const highways = el("layer").value === "highways";
-  el("legend-label").textContent = highways
-    ? "Road length per cell"
-    : el("metric").value === "osm_pct"
-      ? "Completeness (% in OSM)"
-      : "Building density";
+  el("legend-label").textContent =
+    el("metric").value === "osm_pct"
+      ? "Building completeness (% in OSM)"
+      : "Road completeness (% in OSM)";
 }
 
 const SAMPLE = {
@@ -285,7 +278,7 @@ const SAMPLE = {
 
 async function boot() {
   wireUI();
-  syncMetricOptions();
+  updateLegend();
   status("Loading engine...");
   await Promise.all([initDuckDB(), loadManifest(), initMap()]);
   status("Ready. Drop a GeoJSON or try the sample.");
