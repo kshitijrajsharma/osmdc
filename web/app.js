@@ -20,6 +20,9 @@ function loadScript(src) {
 const DATA_BASE =
   "https://huggingface.co/datasets/kshitijrajsharma/osm-completeness-tiles/resolve/main/";
 
+// Road completeness is hidden until the published tiles carry road source data.
+const ROADS_ENABLED = false;
+
 const el = (id) => document.getElementById(id);
 const status = (msg) => (el("status").textContent = msg);
 
@@ -165,7 +168,7 @@ function render(rows) {
     layers: [layer],
     getTooltip: ({ object }) =>
       object && {
-        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km (${object.road_pct ?? "-"}% in OSM)`,
+        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km${ROADS_ENABLED ? ` (${object.road_pct ?? "-"}% in OSM)` : ""}`,
         style: { background: "#111827", color: "#e5e7eb", fontSize: "12px", padding: "6px" },
       },
   });
@@ -183,7 +186,9 @@ function showStats(rows) {
   el("s-cells").textContent = rows.length.toLocaleString();
   el("s-bld").textContent = bld.toLocaleString();
   el("s-pct").textContent = bld ? `${((bldOsm / bld) * 100).toFixed(1)}%` : "-";
-  el("s-road-pct").textContent = road ? `${((roadOsm / road) * 100).toFixed(1)}%` : "-";
+  if (ROADS_ENABLED) {
+    el("s-road-pct").textContent = road ? `${((roadOsm / road) * 100).toFixed(1)}%` : "-";
+  }
   el("s-km").textContent = `${km.toFixed(1)} km`;
   el("stats").hidden = false;
 }
@@ -260,6 +265,11 @@ function wireUI() {
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.classList.remove("open");
   });
+
+  if (!ROADS_ENABLED) {
+    el("metric").querySelector('option[value="road_pct"]')?.remove();
+    el("stat-road").hidden = true;
+  }
 }
 
 function updateLegend() {
