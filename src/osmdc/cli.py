@@ -7,6 +7,7 @@ from pathlib import Path
 
 from osmdc import config
 from osmdc.aggregate import BoundingBox, aggregate_tile, connect, merge_chunks, run_global
+from osmdc.population import kontur_to_parquet
 from osmdc.publish import publish_tiles
 
 
@@ -52,6 +53,9 @@ def build_planet_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the chunk scan and only merge existing chunks into tiles",
     )
+    parser.add_argument(
+        "--population", default=None, help="parquet of (h3, population) to join in the merge"
+    )
     _add_throttle_args(parser)
     return parser
 
@@ -76,12 +80,31 @@ def publish_main() -> None:
     print(f"published to {url}")
 
 
+def population_main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="osmdc-population",
+        description="Aggregate Kontur population to (h3, population) parquet",
+    )
+    parser.add_argument("--gpkg", required=True, help="path to the decompressed Kontur .gpkg")
+    parser.add_argument("--out", type=Path, required=True, help="output parquet path")
+    _add_throttle_args(parser)
+    args = parser.parse_args()
+    con = connect(args.threads, args.memory_limit, args.temp_dir)
+    cells, total = kontur_to_parquet(con, args.gpkg, args.out)
+    print(f"wrote {cells} cells, total population {total:,.0f} to {args.out}")
+
+
 def planet_main() -> None:
     args = build_planet_parser().parse_args()
     con = connect(args.threads, args.memory_limit, args.temp_dir)
     if args.merge_only:
         cells = merge_chunks(
-            con, args.chunk_dir, args.out, args.resolution, args.partition_resolution
+            con,
+            args.chunk_dir,
+            args.out,
+            args.resolution,
+            args.partition_resolution,
+            args.population,
         )
         print(f"merged {cells} cells to {args.out}")
         return
@@ -97,6 +120,7 @@ def planet_main() -> None:
         lat_step=args.lat_step,
         resolution=args.resolution,
         partition_resolution=args.partition_resolution,
+        population_path=args.population,
     )
 
 

@@ -133,20 +133,32 @@ async function queryTiles(parents) {
       road_osm: o.road_osm == null ? 0 : Number(o.road_osm),
       road_pct: o.road_pct == null ? null : Number(o.road_pct),
       road_len_m: Number(o.road_len_m),
+      population: o.population == null ? 0 : Number(o.population),
+      gap_score: o.gap_score == null ? 0 : Number(o.gap_score),
     };
   });
 }
+
+// Completeness metrics are percentages on a fixed 0..100 scale; counts scale to the
+// view maximum. The gap is shown "hot" so high-gap cells read as red.
+const PERCENT_METRICS = new Set(["osm_pct", "road_pct"]);
+const HOT_METRICS = new Set(["gap_score"]);
 
 function metricValue(d) {
   return d[el("metric").value];
 }
 
-// Both metrics are percentages, so they share a fixed 0..100 colour scale.
-function normalise(value) {
-  return value == null ? null : value / 100;
+function makeNormaliser(rows) {
+  const metric = el("metric").value;
+  if (PERCENT_METRICS.has(metric)) return (v) => (v == null ? null : v / 100);
+  let max = 0;
+  for (const d of rows) max = Math.max(max, d[metric] || 0);
+  return (v) => (v == null || max === 0 ? null : v / max);
 }
 
 function render(rows) {
+  const norm = makeNormaliser(rows);
+  const hot = HOT_METRICS.has(el("metric").value);
   const layer = new H3HexagonLayer({
     id: "cells",
     data: rows,
@@ -159,29 +171,33 @@ function render(rows) {
     opacity: 0.72,
     pickable: true,
     getFillColor: (d) => {
-      const t = normalise(metricValue(d));
-      return t == null ? [80, 80, 80, 120] : [...ramp(t), 200];
+      let t = norm(metricValue(d));
+      if (t == null) return [80, 80, 80, 120];
+      if (hot) t = 1 - t;
+      return [...ramp(t), 200];
     },
-    updateTriggers: { getFillColor: [el("metric").value] },
+    updateTriggers: { getFillColor: [el("metric").value, rows] },
   });
   overlay.setProps({
     layers: [layer],
     getTooltip: ({ object }) =>
       object && {
-        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km${ROADS_ENABLED ? ` (${object.road_pct ?? "-"}% in OSM)` : ""}`,
+        html: `<b>${object.h3}</b><br/>buildings: ${object.bld_count} (${object.osm_pct ?? "-"}% in OSM)<br/>roads: ${(object.road_len_m / 1000).toFixed(2)} km${ROADS_ENABLED ? ` (${object.road_pct ?? "-"}% in OSM)` : ""}<br/>population: ${object.population.toLocaleString()} (gap ${object.gap_score.toLocaleString()})`,
         style: { background: "#111827", color: "#e5e7eb", fontSize: "12px", padding: "6px" },
       },
   });
 }
 
 function showStats(rows) {
-  let bld = 0, bldOsm = 0, road = 0, roadOsm = 0, km = 0;
+  let bld = 0, bldOsm = 0, road = 0, roadOsm = 0, km = 0, pop = 0, gap = 0;
   for (const d of rows) {
     bld += d.bld_count;
     bldOsm += d.bld_osm;
     road += d.road_count;
     roadOsm += d.road_osm;
     km += d.road_len_m / 1000;
+    pop += d.population;
+    gap += d.gap_score;
   }
   el("s-cells").textContent = rows.length.toLocaleString();
   el("s-bld").textContent = bld.toLocaleString();
@@ -190,6 +206,8 @@ function showStats(rows) {
     el("s-road-pct").textContent = road ? `${((roadOsm / road) * 100).toFixed(1)}%` : "-";
   }
   el("s-km").textContent = `${km.toFixed(1)} km`;
+  el("s-pop").textContent = Math.round(pop).toLocaleString();
+  el("s-gap").textContent = Math.round(gap).toLocaleString();
   el("stats").hidden = false;
 }
 
@@ -272,11 +290,18 @@ function wireUI() {
   }
 }
 
+const METRIC_LEGEND = {
+  osm_pct: { label: "Building completeness (% in OSM)", min: "0%", max: "100%" },
+  road_pct: { label: "Road completeness (% in OSM)", min: "0%", max: "100%" },
+  gap_score: { label: "Mapping gap (people)", min: "high", max: "low" },
+  population: { label: "Population", min: "fewer", max: "more" },
+};
+
 function updateLegend() {
-  el("legend-label").textContent =
-    el("metric").value === "osm_pct"
-      ? "Building completeness (% in OSM)"
-      : "Road completeness (% in OSM)";
+  const legend = METRIC_LEGEND[el("metric").value];
+  el("legend-label").textContent = legend.label;
+  el("legend-min").textContent = legend.min;
+  el("legend-max").textContent = legend.max;
 }
 
 const SAMPLE = {

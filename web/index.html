@@ -41,6 +41,7 @@
       .stats { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; }
       .stat { display: flex; justify-content: space-between; padding: 4px 0; }
       .stat b { font-variant-numeric: tabular-nums; }
+      .stat[hidden] { display: none; }
       #legend { margin-top: 16px; font-size: 11px; color: var(--muted); }
       #bar { height: 10px; border-radius: 5px; margin: 6px 0; background: linear-gradient(90deg, #d73027, #fee08b, #1a9850); }
       #status { margin-top: 14px; font-size: 12px; color: var(--muted); min-height: 16px; }
@@ -78,6 +79,8 @@
         <select id="metric">
           <option value="osm_pct">Building completeness (% in OSM)</option>
           <option value="road_pct">Road completeness (% in OSM)</option>
+          <option value="gap_score">Mapping gap (people)</option>
+          <option value="population">Population</option>
         </select>
 
         <div id="legend">
@@ -98,6 +101,8 @@
           <div class="stat"><span>Buildings in OSM</span><b id="s-pct">0%</b></div>
           <div class="stat" id="stat-road"><span>Roads in OSM</span><b id="s-road-pct">0%</b></div>
           <div class="stat"><span>Road length</span><b id="s-km">0 km</b></div>
+          <div class="stat"><span>Population</span><b id="s-pop">0</b></div>
+          <div class="stat"><span>People in gaps</span><b id="s-gap">0</b></div>
         </div>
 
         <div class="row">
@@ -140,6 +145,13 @@
           from TomTom and other sources. Because the reference is largely OpenStreetMap
           itself, road completeness reads high almost everywhere. A high value means the
           roads match Overture's reference, not that every road on the ground is mapped.
+        </p>
+        <h3>Mapping gap</h3>
+        <p>
+          Population comes from the Kontur Population dataset (H3 resolution 8, 2023).
+          The mapping gap weights people by how incomplete the buildings are:
+          <code>population × (1 − building completeness)</code>. A cell with many people and
+          few buildings in OpenStreetMap scores high, that is where mapping helps most.
         </p>
         <h3>The grid</h3>
         <p>

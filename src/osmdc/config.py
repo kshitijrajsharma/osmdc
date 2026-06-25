@@ -11,3 +11,9 @@ PARTITION_RESOLUTION = 2
 
 OSM_DATASET = "OpenStreetMap"
 S3_REGION = "us-west-2"
+
+# Kontur Population (H3 resolution 8, CC BY). Download and gunzip before aggregating.
+KONTUR_POPULATION_URL = (
+    "https://geodata-eu-central-1-kontur-public.s3.eu-central-1.amazonaws.com"
+    "/kontur_datasets/kontur_population_20231101.gpkg.gz"
+)

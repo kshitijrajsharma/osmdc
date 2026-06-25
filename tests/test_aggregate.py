@@ -103,3 +103,42 @@ def test_merge_sums_border_cells(tmp_path):
     assert row[1] == 3
     assert row[2] == 37.5
     assert (row[3], row[4], row[5]) == (8, 3, 37.5)
+
+
+def test_merge_joins_population_and_gap(tmp_path):
+    """Population joins onto cells, and gap weights people by building incompleteness."""
+    import h3
+
+    con = connect()
+    chunk_dir = tmp_path / "chunks"
+    chunk_dir.mkdir()
+    cell_a = h3.latlng_to_cell(27.70, 85.30, 8)
+    cell_b = h3.latlng_to_cell(52.50, 13.40, 8)
+    parent_a = h3.cell_to_parent(cell_a, 2)
+
+    # cell_a: 10 buildings, 5 in OSM (50% complete)
+    con.execute(f"""
+        COPY (SELECT '{cell_a}' AS h3, '{parent_a}' AS h3_parent,
+                     10::BIGINT AS bld_count, 5::BIGINT AS bld_osm,
+                     0::BIGINT AS road_count, 0::BIGINT AS road_osm, 0.0 AS road_len_m)
+        TO '{chunk_dir / "chunk_0000"}.parquet' (FORMAT PARQUET)
+    """)
+    # cell_a has 1000 people; cell_b has 500 people and no buildings
+    pop = tmp_path / "pop.parquet"
+    con.execute(f"""
+        COPY (SELECT * FROM (VALUES ('{cell_a}', 1000.0), ('{cell_b}', 500.0)) AS t(h3, population))
+        TO '{pop}' (FORMAT PARQUET)
+    """)
+
+    cells = merge_chunks(con, chunk_dir, tmp_path / "out", 8, 2, str(pop))
+    assert cells == 2  # cell_a (buildings + people) and cell_b (people only)
+
+    rows = {
+        r[0]: r
+        for r in con.execute(
+            f"SELECT h3, bld_count, population, gap_score "
+            f"FROM read_parquet('{tmp_path / 'out'}/**/*.parquet')"
+        ).fetchall()
+    }
+    assert rows[cell_a][1:] == (10, 1000, 500)  # 50% complete x 1000 people -> 500 gap
+    assert rows[cell_b][1:] == (0, 500, 500)  # no buildings -> full 500 gap

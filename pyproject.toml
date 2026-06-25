@@ -16,6 +16,7 @@ dependencies = [
 osmdc = "osmdc.cli:main"
 osmdc-planet = "osmdc.cli:planet_main"
 osmdc-publish = "osmdc.cli:publish_main"
+osmdc-population = "osmdc.cli:population_main"
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]

@@ -65,15 +65,8 @@ def _bbox_filter(bbox: BoundingBox) -> str:
     )
 
 
-def _cells_query(
-    bbox: BoundingBox,
-    resolution: int,
-    partition_resolution: int,
-    buildings_path: str,
-    segments_path: str,
-) -> str:
-    cell = _cell_expr(resolution)
-    where = _bbox_filter(bbox)
+def _feature_ctes(cell: str, where: str, buildings_path: str, segments_path: str) -> str:
+    """CTEs of per-cell building and road counts, with OSM source share, for one area."""
     osm_present = f"len(list_filter(sources, s -> s.dataset = '{config.OSM_DATASET}')) > 0"
     return f"""
     WITH buildings AS (
@@ -102,7 +95,18 @@ def _cells_query(
                coalesce(road_osm, 0) AS road_osm,
                coalesce(road_len_m, 0.0) AS road_len_m
         FROM buildings FULL OUTER JOIN roads ON buildings.cell = roads.cell
-    )
+    )"""
+
+
+def _cells_query(
+    bbox: BoundingBox,
+    resolution: int,
+    partition_resolution: int,
+    buildings_path: str,
+    segments_path: str,
+) -> str:
+    ctes = _feature_ctes(_cell_expr(resolution), _bbox_filter(bbox), buildings_path, segments_path)
+    return f"""{ctes}
     SELECT h3_h3_to_string(cell) AS h3,
            h3_h3_to_string(h3_cell_to_parent(cell, {partition_resolution})) AS h3_parent,
            bld_count,
@@ -197,37 +201,8 @@ def _raw_chunk_query(
     segments_path: str,
 ) -> str:
     """Per-cell partial sums for one chunk. Completeness is derived later, after merge."""
-    cell = _cell_expr(resolution)
-    where = _chunk_filter(bbox)
-    osm_present = f"len(list_filter(sources, s -> s.dataset = '{config.OSM_DATASET}')) > 0"
-    return f"""
-    WITH buildings AS (
-        SELECT {cell} AS cell,
-               count(*) AS bld_count,
-               count(*) FILTER (WHERE {osm_present}) AS bld_osm
-        FROM read_parquet('{buildings_path}', hive_partitioning=1)
-        WHERE {where}
-        GROUP BY 1
-    ),
-    roads AS (
-        SELECT {cell} AS cell,
-               count(*) AS road_count,
-               count(*) FILTER (WHERE {osm_present}) AS road_osm,
-               sum(CASE WHEN isfinite(ST_Length_Spheroid(geometry))
-                        THEN ST_Length_Spheroid(geometry) ELSE 0 END) AS road_len_m
-        FROM read_parquet('{segments_path}', hive_partitioning=1)
-        WHERE {where} AND subtype = 'road'
-        GROUP BY 1
-    ),
-    merged AS (
-        SELECT coalesce(buildings.cell, roads.cell) AS cell,
-               coalesce(bld_count, 0) AS bld_count,
-               coalesce(bld_osm, 0) AS bld_osm,
-               coalesce(road_count, 0) AS road_count,
-               coalesce(road_osm, 0) AS road_osm,
-               coalesce(road_len_m, 0.0) AS road_len_m
-        FROM buildings FULL OUTER JOIN roads ON buildings.cell = roads.cell
-    )
+    ctes = _feature_ctes(_cell_expr(resolution), _chunk_filter(bbox), buildings_path, segments_path)
+    return f"""{ctes}
     SELECT h3_h3_to_string(cell) AS h3,
            h3_h3_to_string(h3_cell_to_parent(cell, {partition_resolution})) AS h3_parent,
            bld_count, bld_osm, road_count, road_osm, road_len_m
@@ -241,26 +216,64 @@ def merge_chunks(
     out_dir: Path,
     resolution: int,
     partition_resolution: int,
+    population_path: str | None = None,
 ) -> int:
-    """Sum partial cells across all chunks (handling border cells) into browser tiles."""
+    """Sum partial cells across all chunks into browser tiles, joining population.
+
+    A full outer join with the population cells adds cells that have people but no
+    mapped buildings. gap_score weights population by how incomplete the buildings are.
+    """
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.parent.mkdir(parents=True, exist_ok=True)
+    pop_source = (
+        f"read_parquet('{population_path}')"
+        if population_path
+        else "(SELECT NULL::VARCHAR AS h3, NULL::DOUBLE AS population WHERE false)"
+    )
+    chunk_columns = {
+        row[0]
+        for row in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{chunk_dir}/chunk_*.parquet')"
+        ).fetchall()
+    }
+    # Treat road_osm as zero when the chunks do not carry that column.
+    road_osm_agg = "sum(road_osm)" if "road_osm" in chunk_columns else "0"
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE merged_cells AS
-        SELECT h3,
-               any_value(h3_parent) AS h3_parent,
-               sum(bld_count) AS bld_count,
-               sum(bld_osm) AS bld_osm,
-               round(sum(bld_osm) * 100.0 / nullif(sum(bld_count), 0), 1) AS osm_pct,
-               sum(road_count) AS road_count,
-               sum(road_osm) AS road_osm,
-               round(sum(road_osm) * 100.0 / nullif(sum(road_count), 0), 1) AS road_pct,
-               round(
-                   sum(CASE WHEN isfinite(road_len_m) THEN road_len_m ELSE 0 END), 1
-               ) AS road_len_m
-        FROM read_parquet('{chunk_dir}/chunk_*.parquet')
-        GROUP BY h3
+        WITH chunk_cells AS (
+            SELECT h3,
+                   any_value(h3_parent) AS h3_parent,
+                   sum(bld_count) AS bld_count,
+                   sum(bld_osm) AS bld_osm,
+                   sum(road_count) AS road_count,
+                   {road_osm_agg} AS road_osm,
+                   sum(CASE WHEN isfinite(road_len_m) THEN road_len_m ELSE 0 END) AS road_len_m
+            FROM read_parquet('{chunk_dir}/chunk_*.parquet')
+            GROUP BY h3
+        ),
+        pop AS (SELECT h3, population FROM {pop_source})
+        SELECT
+            coalesce(c.h3, p.h3) AS h3,
+            coalesce(
+                c.h3_parent,
+                h3_h3_to_string(h3_cell_to_parent(h3_string_to_h3(p.h3), {partition_resolution}))
+            ) AS h3_parent,
+            coalesce(c.bld_count, 0) AS bld_count,
+            coalesce(c.bld_osm, 0) AS bld_osm,
+            round(coalesce(c.bld_osm, 0) * 100.0
+                  / nullif(coalesce(c.bld_count, 0), 0), 1) AS osm_pct,
+            coalesce(c.road_count, 0) AS road_count,
+            coalesce(c.road_osm, 0) AS road_osm,
+            round(coalesce(c.road_osm, 0) * 100.0
+                  / nullif(coalesce(c.road_count, 0), 0), 1) AS road_pct,
+            round(coalesce(c.road_len_m, 0), 1) AS road_len_m,
+            coalesce(p.population, 0) AS population,
+            round(
+                coalesce(p.population, 0)
+                * (1 - coalesce(c.bld_osm * 1.0 / nullif(c.bld_count, 0), 0))
+            ) AS gap_score
+        FROM chunk_cells c FULL OUTER JOIN pop p ON c.h3 = p.h3
     """)
     con.execute(
         f"COPY merged_cells TO '{out_dir}' "
@@ -303,6 +316,7 @@ def run_global(
     partition_resolution: int = config.PARTITION_RESOLUTION,
     buildings_path: str = config.BUILDINGS_PATH,
     segments_path: str = config.SEGMENTS_PATH,
+    population_path: str | None = None,
 ) -> int:
     """Aggregate a lon/lat range chunk by chunk, then merge into browser tiles.
 
@@ -331,6 +345,6 @@ def run_global(
         cells = con.execute(f"SELECT count(*) FROM read_parquet('{target}')").fetchone()
         assert cells is not None
         print(f"{label} -> {cells[0]} cells", flush=True)
-    total = merge_chunks(con, chunk_dir, out_dir, resolution, partition_resolution)
+    total = merge_chunks(con, chunk_dir, out_dir, resolution, partition_resolution, population_path)
     print(f"merged {total} cells to {out_dir}", flush=True)
     return total
