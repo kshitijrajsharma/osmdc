@@ -55,9 +55,11 @@ async function initMap() {
     style: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     center: [85.32, 27.71],
     zoom: 10,
+    hash: true,
   });
   overlay = new MapboxOverlay({ interleaved: false, layers: [] });
   map.addControl(overlay);
+  await new Promise((resolve) => map.on("load", resolve));
 }
 
 async function initDuckDB() {
@@ -218,7 +220,7 @@ function fitTo(rows) {
   map.fitBounds(b, { padding: 40, duration: 600 });
 }
 
-async function process(geojson) {
+async function process(geojson, fit = true) {
   status("Reading area...");
   const polys = polygonsOf(geojson);
   if (polys.length === 0) return status("No polygon found in that file.");
@@ -233,9 +235,43 @@ async function process(geojson) {
   if (currentRows.length === 0) return status("No data tiles cover this area yet.");
   render(currentRows);
   showStats(currentRows);
-  fitTo(currentRows);
+  if (fit) fitTo(currentRows);
   el("download").disabled = false;
   status(`${currentRows.length} cells in view.`);
+}
+
+function boundsAreaKm2(bounds) {
+  const midLat = (((bounds.getNorth() + bounds.getSouth()) / 2) * Math.PI) / 180;
+  const width = (bounds.getEast() - bounds.getWest()) * 111.32 * Math.cos(midLat);
+  const height = (bounds.getNorth() - bounds.getSouth()) * 110.57;
+  return Math.abs(width * height);
+}
+
+function assessView() {
+  const b = map.getBounds();
+  if (boundsAreaKm2(b) > 40000) return status("Zoom in to assess a smaller area.");
+  const poly = {
+    type: "Polygon",
+    coordinates: [[
+      [b.getWest(), b.getSouth()], [b.getEast(), b.getSouth()],
+      [b.getEast(), b.getNorth()], [b.getWest(), b.getNorth()], [b.getWest(), b.getSouth()],
+    ]],
+  };
+  return process(poly, false);
+}
+
+async function searchPlace(query) {
+  if (!query.trim()) return;
+  status(`Searching "${query}"...`);
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(query);
+  const res = await fetch(url);
+  if (!res.ok) return status(`Search failed (${res.status}).`);
+  const hits = await res.json();
+  if (!hits.length) return status(`No result for "${query}".`);
+  const [south, north, west, east] = hits[0].boundingbox.map(Number);
+  map.fitBounds([[west, south], [east, north]], { maxZoom: 12, duration: 800 });
+  status(`Moved to ${hits[0].display_name}. Use "Assess current view".`);
 }
 
 function downloadGeoJSON() {
@@ -276,6 +312,10 @@ function wireUI() {
   el("metric").addEventListener("change", rerender);
   el("download").addEventListener("click", downloadGeoJSON);
   el("sample").addEventListener("click", () => process(SAMPLE));
+  el("assess").addEventListener("click", assessView);
+  el("search").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") searchPlace(e.target.value);
+  });
 
   const modal = el("info-modal");
   el("info-btn").addEventListener("click", () => modal.classList.add("open"));
@@ -312,11 +352,14 @@ const SAMPLE = {
 };
 
 async function boot() {
+  // A shared URL carries the map view in the hash; assess it once loaded.
+  const sharedView = location.hash.length > 1;
   wireUI();
   updateLegend();
   status("Loading engine...");
   await Promise.all([initDuckDB(), loadManifest(), initMap()]);
-  status("Ready. Drop a GeoJSON or try the sample.");
+  status("Ready. Search a place, then assess the current view.");
+  if (sharedView) assessView();
 }
 
 boot().catch((e) => status(`Error: ${e.message}`));

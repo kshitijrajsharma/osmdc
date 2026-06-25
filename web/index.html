@@ -37,6 +37,8 @@
       }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       button.primary { background: var(--accent); color: #06283d; border-color: var(--accent); font-weight: 600; }
+      #search { width: 100%; background: #1e293b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font-size: 13px; margin-bottom: 8px; }
+      #search::placeholder { color: var(--muted); }
       label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
       .stats { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; }
       .stat { display: flex; justify-content: space-between; padding: 4px 0; }
@@ -65,7 +67,12 @@
     <div id="app">
       <aside id="panel">
         <h1>OSM Completeness Helper</h1>
-        <div class="sub">Drop an area, see how much is in OpenStreetMap.</div>
+        <div class="sub">Search or drop an area, see how much is in OpenStreetMap.</div>
+
+        <input id="search" type="text" placeholder="Search a place, then Enter" autocomplete="off" />
+        <div class="row">
+          <button id="assess" class="primary">Assess current view</button>
+        </div>
 
         <div id="drop">
           Drag &amp; drop a GeoJSON polygon<br />or click to choose a file
