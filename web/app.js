@@ -46,12 +46,18 @@ function ramp(t) {
 }
 
 let map, overlay, db, manifest, currentRows = [];
+let gridVisible = true;
 
 const ESRI_TILES =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 function toggleSatellite(on) {
   map.setLayoutProperty("esri", "visibility", on ? "visible" : "none");
+}
+
+function toggleGrid(on) {
+  gridVisible = on;
+  render(currentRows);
 }
 
 async function initMap() {
@@ -175,6 +181,7 @@ function makeNormaliser(rows) {
 }
 
 function render(rows) {
+  if (!gridVisible) return overlay.setProps({ layers: [] });
   const norm = makeNormaliser(rows);
   const hot = HOT_METRICS.has(el("metric").value);
   const layer = new H3HexagonLayer({
@@ -360,6 +367,7 @@ function wireUI() {
   el("sample").addEventListener("click", () => process(SAMPLE));
   el("assess").addEventListener("click", assessView);
   el("toggle-esri").addEventListener("change", (e) => toggleSatellite(e.target.checked));
+  el("toggle-grid").addEventListener("change", (e) => toggleGrid(e.target.checked));
 
   const search = el("search");
   let searchTimer;
