@@ -37,8 +37,16 @@
       }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       button.primary { background: var(--accent); color: #06283d; border-color: var(--accent); font-weight: 600; }
-      #search { width: 100%; background: #1e293b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font-size: 13px; margin-bottom: 8px; }
+      #search-box { position: relative; margin-bottom: 8px; }
+      #search { width: 100%; background: #1e293b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 28px 9px 10px; font-size: 13px; }
       #search::placeholder { color: var(--muted); }
+      #search-clear { position: absolute; right: 4px; top: 4px; width: 24px; height: 26px; padding: 0; border: none; background: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; display: none; }
+      #search-clear.show { display: block; }
+      #search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; margin: 0; padding: 0; list-style: none; background: #1e293b; border: 1px solid var(--line); border-radius: 8px; max-height: 220px; overflow-y: auto; z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+      #search-results[hidden] { display: none; }
+      #search-results li { padding: 8px 10px; font-size: 12px; cursor: pointer; }
+      #search-results li + li { border-top: 1px solid var(--line); }
+      #search-results li:hover { background: #243246; }
       label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; }
       .stats { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; font-size: 13px; }
       .stat { display: flex; justify-content: space-between; padding: 4px 0; }
@@ -67,9 +75,13 @@
     <div id="app">
       <aside id="panel">
         <h1>OSM Completeness Helper</h1>
-        <div class="sub">Search or drop an area, see how much is in OpenStreetMap.</div>
+        <div class="sub">How much of an area is already in OpenStreetMap?</div>
 
-        <input id="search" type="text" placeholder="Search a place, then Enter" autocomplete="off" />
+        <div id="search-box">
+          <input id="search" type="text" placeholder="Search a place" autocomplete="off" />
+          <button id="search-clear" aria-label="Clear" title="Clear">&times;</button>
+          <ul id="search-results" hidden></ul>
+        </div>
         <div class="row">
           <button id="assess" class="primary">Assess current view</button>
         </div>

@@ -260,18 +260,45 @@ function assessView() {
   return process(poly, false);
 }
 
-async function searchPlace(query) {
-  if (!query.trim()) return;
-  status(`Searching "${query}"...`);
+let searchHits = [];
+
+async function searchSuggest(query) {
+  const results = el("search-results");
+  if (query.trim().length < 3) return (results.hidden = true);
   const url =
-    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(query);
+    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=" + encodeURIComponent(query);
   const res = await fetch(url);
-  if (!res.ok) return status(`Search failed (${res.status}).`);
-  const hits = await res.json();
-  if (!hits.length) return status(`No result for "${query}".`);
-  const [south, north, west, east] = hits[0].boundingbox.map(Number);
-  map.fitBounds([[west, south], [east, north]], { maxZoom: 12, duration: 800 });
-  status(`Moved to ${hits[0].display_name}. Use "Assess current view".`);
+  if (!res.ok) return;
+  searchHits = await res.json();
+  results.innerHTML = "";
+  for (const [i, hit] of searchHits.entries()) {
+    const item = document.createElement("li");
+    item.textContent = hit.display_name;
+    item.dataset.index = i;
+    results.appendChild(item);
+  }
+  results.hidden = searchHits.length === 0;
+}
+
+function selectPlace(hit) {
+  if (!hit) return;
+  el("search-results").hidden = true;
+  el("search").value = hit.display_name.split(",")[0];
+  const [south, north, west, east] = hit.boundingbox.map(Number);
+  map.fitBounds([[west, south], [east, north]], { maxZoom: 13, duration: 800 });
+  status(`Moved to ${hit.display_name.split(",").slice(0, 2).join(",")}.`);
+}
+
+function clearSearch() {
+  el("search").value = "";
+  el("search-results").hidden = true;
+  el("search-clear").classList.remove("show");
+  searchHits = [];
+  currentRows = [];
+  overlay.setProps({ layers: [] });
+  el("stats").hidden = true;
+  el("download").disabled = true;
+  status("Ready.");
 }
 
 function downloadGeoJSON() {
@@ -313,8 +340,27 @@ function wireUI() {
   el("download").addEventListener("click", downloadGeoJSON);
   el("sample").addEventListener("click", () => process(SAMPLE));
   el("assess").addEventListener("click", assessView);
-  el("search").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") searchPlace(e.target.value);
+
+  const search = el("search");
+  let searchTimer;
+  search.addEventListener("input", () => {
+    el("search-clear").classList.toggle("show", search.value.length > 0);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => searchSuggest(search.value), 300);
+  });
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      selectPlace(searchHits[0]);
+    }
+  });
+  el("search-results").addEventListener("click", (e) => {
+    const item = e.target.closest("li");
+    if (item) selectPlace(searchHits[Number(item.dataset.index)]);
+  });
+  el("search-clear").addEventListener("click", clearSearch);
+  document.addEventListener("click", (e) => {
+    if (!el("search-box").contains(e.target)) el("search-results").hidden = true;
   });
 
   const modal = el("info-modal");
