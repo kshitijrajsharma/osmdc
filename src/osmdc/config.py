@@ -17,3 +17,4 @@ KONTUR_POPULATION_URL = (
     "https://geodata-eu-central-1-kontur-public.s3.eu-central-1.amazonaws.com"
     "/kontur_datasets/kontur_population_20231101.gpkg.gz"
 )
+KONTUR_POPULATION_DATE = "2023-11-01"

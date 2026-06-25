@@ -46,6 +46,10 @@
       }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
       button.primary { background: var(--accent); color: #ffffff; border-color: var(--accent); font-weight: 600; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      button.busy { color: transparent !important; position: relative; pointer-events: none; }
+      button.busy::after { content: ""; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid rgba(255, 255, 255, 0.45); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+      #drop-text { word-break: break-word; }
       #search-box { position: relative; margin-bottom: 8px; }
       #search { width: 100%; background: #ffffff; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 28px 9px 10px; font-size: 13px; }
       #search::placeholder { color: var(--muted); }
@@ -103,7 +107,7 @@
         </div>
 
         <div id="drop">
-          Drag &amp; drop a GeoJSON polygon<br />or click to choose a file
+          <span id="drop-text">Drag &amp; drop a GeoJSON polygon<br />or click to choose a file</span>
           <input id="file" type="file" accept=".geojson,.json" hidden />
         </div>
         <div class="row">
@@ -145,7 +149,7 @@
         <div id="status"></div>
         <div class="footer">
           built with ❤️ by
-          <a href="https://github.com/sponsors/kshitijrajsharma" target="_blank" rel="noopener">kshitij</a>
+          <a href="https://github.com/kshitijrajsharma" target="_blank" rel="noopener">kshitij</a>
         </div>
       </aside>
       <div id="map-wrap">
@@ -200,8 +204,14 @@
           Features are counted in H3 resolution 8 hexagons (about 0.7 km² each).
           A dropped polygon is matched to the hexagons it covers.
         </p>
+        <h3>Sources</h3>
         <p>
-          Data: © OpenStreetMap contributors, Overture Maps Foundation.
+          Buildings and roads from
+          <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>
+          (release <span id="src-overture">2026-06-17.0</span>). Population from
+          <a href="https://data.humdata.org/dataset/kontur-population-dataset" target="_blank" rel="noopener">Kontur Population</a>
+          (<span id="src-population">2023-11-01</span>).
+          © OpenStreetMap contributors, Overture Maps Foundation.
         </p>
       </div>
     </div>

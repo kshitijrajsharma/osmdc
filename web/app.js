@@ -2,7 +2,6 @@ import maplibregl from "https://cdn.jsdelivr.net/npm/maplibre-gl@4/+esm";
 import * as h3 from "https://cdn.jsdelivr.net/npm/h3-js@4/+esm";
 import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm";
 
-// deck.gl reads h3-js from the global scope, so it must be set before deck.gl loads.
 window.h3 = h3;
 let MapboxOverlay, H3HexagonLayer;
 
@@ -16,11 +15,9 @@ function loadScript(src) {
   });
 }
 
-// Tiles stream directly from the Hugging Face dataset.
 const DATA_BASE =
   "https://huggingface.co/datasets/kshitijrajsharma/osm-completeness-tiles/resolve/main/";
 
-// Road completeness is hidden until the published tiles carry road source data.
 const ROADS_ENABLED = false;
 
 const el = (id) => document.getElementById(id);
@@ -47,6 +44,21 @@ function ramp(t) {
 
 let map, overlay, db, manifest, currentRows = [];
 let gridVisible = true;
+let busy = false;
+
+function setBusy(on) {
+  busy = on;
+  if (on) el("assess").disabled = true;
+  el("assess").classList.toggle("busy", on);
+  if (!on) updateAssessButton();
+}
+
+function updateAssessButton() {
+  if (busy || !map) return;
+  const tooBig = boundsAreaKm2(map.getBounds()) > 40000;
+  el("assess").disabled = tooBig;
+  el("assess").textContent = tooBig ? "Zoom in to assess" : "Assess current view";
+}
 
 const ESRI_TILES =
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -73,7 +85,6 @@ async function initMap() {
   overlay = new MapboxOverlay({ interleaved: false, layers: [] });
   map.addControl(overlay);
   await new Promise((resolve) => map.on("load", resolve));
-  // Esri imagery sits above the light base; the toggle shows or hides it.
   map.addSource("esri", {
     type: "raster",
     tiles: [ESRI_TILES],
@@ -82,6 +93,8 @@ async function initMap() {
     attribution: "Imagery © Esri, Maxar",
   });
   map.addLayer({ id: "esri", type: "raster", source: "esri", layout: { visibility: "none" } });
+  map.on("moveend", updateAssessButton);
+  updateAssessButton();
 }
 
 async function initDuckDB() {
@@ -99,6 +112,8 @@ async function loadManifest() {
   const res = await fetch(new URL("manifest.json", DATA_BASE));
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   manifest = await res.json();
+  if (manifest.overture_release) el("src-overture").textContent = manifest.overture_release;
+  if (manifest.population_date) el("src-population").textContent = manifest.population_date;
 }
 
 function polygonsOf(geojson) {
@@ -163,8 +178,6 @@ async function queryTiles(parents) {
   });
 }
 
-// Completeness metrics are percentages on a fixed 0..100 scale; counts scale to the
-// view maximum. The gap is shown "hot" so high-gap cells read as red.
 const PERCENT_METRICS = new Set(["osm_pct", "road_pct"]);
 const HOT_METRICS = new Set(["gap_score"]);
 
@@ -247,23 +260,28 @@ function fitTo(rows) {
 }
 
 async function process(geojson, fit = true) {
-  status("Reading area...");
-  const polys = polygonsOf(geojson);
-  if (polys.length === 0) return status("No polygon found in that file.");
+  setBusy(true);
+  try {
+    status("Reading area...");
+    const polys = polygonsOf(geojson);
+    if (polys.length === 0) return status("No polygon found in that file.");
 
-  const cells = coveredCells(polys, manifest.resolution);
-  const parents = new Set([...cells].map((c) => h3.cellToParent(c, manifest.partition_resolution)));
+    const cells = coveredCells(polys, manifest.resolution);
+    const parents = new Set([...cells].map((c) => h3.cellToParent(c, manifest.partition_resolution)));
 
-  status(`Querying ${parents.size} tile(s)...`);
-  const all = await queryTiles(parents);
-  currentRows = all.filter((d) => cells.has(d.h3));
+    status(`Querying ${parents.size} tile(s)...`);
+    const all = await queryTiles(parents);
+    currentRows = all.filter((d) => cells.has(d.h3));
 
-  if (currentRows.length === 0) return status("No data tiles cover this area yet.");
-  render(currentRows);
-  showStats(currentRows);
-  if (fit) fitTo(currentRows);
-  el("download").disabled = false;
-  status(`${currentRows.length} cells in view.`);
+    if (currentRows.length === 0) return status("No data tiles cover this area yet.");
+    render(currentRows);
+    showStats(currentRows);
+    if (fit) fitTo(currentRows);
+    el("download").disabled = false;
+    status(`${currentRows.length} cells in view.`);
+  } finally {
+    setBusy(false);
+  }
 }
 
 function boundsAreaKm2(bounds) {
@@ -344,6 +362,7 @@ function downloadGeoJSON() {
 }
 
 function readFile(file) {
+  el("drop-text").textContent = file.name;
   const reader = new FileReader();
   reader.onload = () => process(JSON.parse(reader.result));
   reader.readAsText(file);
@@ -427,7 +446,6 @@ const SAMPLE = {
 };
 
 async function boot() {
-  // A shared URL carries the map view in the hash; assess it once loaded.
   const sharedView = location.hash.length > 1;
   wireUI();
   updateLegend();

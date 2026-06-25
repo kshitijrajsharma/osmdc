@@ -116,14 +116,12 @@ def test_merge_joins_population_and_gap(tmp_path):
     cell_b = h3.latlng_to_cell(52.50, 13.40, 8)
     parent_a = h3.cell_to_parent(cell_a, 2)
 
-    # cell_a: 10 buildings, 5 in OSM (50% complete)
     con.execute(f"""
         COPY (SELECT '{cell_a}' AS h3, '{parent_a}' AS h3_parent,
                      10::BIGINT AS bld_count, 5::BIGINT AS bld_osm,
                      0::BIGINT AS road_count, 0::BIGINT AS road_osm, 0.0 AS road_len_m)
         TO '{chunk_dir / "chunk_0000"}.parquet' (FORMAT PARQUET)
     """)
-    # cell_a has 1000 people; cell_b has 500 people and no buildings
     pop = tmp_path / "pop.parquet"
     con.execute(f"""
         COPY (SELECT * FROM (VALUES ('{cell_a}', 1000.0), ('{cell_b}', 500.0)) AS t(h3, population))

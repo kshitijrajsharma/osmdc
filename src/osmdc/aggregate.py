@@ -158,6 +158,8 @@ def write_manifest(out_dir: Path, resolution: int, partition_resolution: int) ->
     manifest = {
         "resolution": resolution,
         "partition_resolution": partition_resolution,
+        "overture_release": config.OVERTURE_RELEASE,
+        "population_date": config.KONTUR_POPULATION_DATE,
         "tiles": tiles,
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
