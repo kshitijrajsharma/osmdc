@@ -21,7 +21,14 @@ const DATA_BASE =
 const ROADS_ENABLED = false;
 
 const el = (id) => document.getElementById(id);
-const status = (msg) => (el("status").textContent = msg);
+const status = (msg) => {
+  el("status").classList.remove("error");
+  el("status").textContent = msg;
+};
+const error = (msg) => {
+  el("status").classList.add("error");
+  el("status").textContent = msg;
+};
 
 const COLOR_STOPS = [
   [0.0, [215, 48, 39]],
@@ -268,7 +275,7 @@ async function process(geojson, fit = true) {
     const { polys, otherTypes } = polygonsOf(geojson);
     if (polys.length === 0) {
       const found = [...otherTypes].join(", ");
-      return status(found
+      return error(found
         ? `Only Polygon and MultiPolygon are supported, not ${found}.`
         : "No polygon found in that file.");
     }
@@ -462,4 +469,4 @@ async function boot() {
   if (sharedView) assessView();
 }
 
-boot().catch((e) => status(`Error: ${e.message}`));
+boot().catch((e) => error(`Error: ${e.message}`));
