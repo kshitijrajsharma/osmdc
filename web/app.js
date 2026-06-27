@@ -121,13 +121,15 @@ function polygonsOf(geojson) {
     : geojson.type === "Feature" ? [geojson]
       : [{ type: "Feature", geometry: geojson }];
   const polys = [];
+  const otherTypes = new Set();
   for (const f of feats) {
     const g = f.geometry;
     if (!g) continue;
     if (g.type === "Polygon") polys.push(g.coordinates);
     else if (g.type === "MultiPolygon") polys.push(...g.coordinates);
+    else otherTypes.add(g.type);
   }
-  return polys;
+  return { polys, otherTypes };
 }
 
 function coveredCells(polys, resolution) {
@@ -263,8 +265,13 @@ async function process(geojson, fit = true) {
   setBusy(true);
   try {
     status("Reading area...");
-    const polys = polygonsOf(geojson);
-    if (polys.length === 0) return status("No polygon found in that file.");
+    const { polys, otherTypes } = polygonsOf(geojson);
+    if (polys.length === 0) {
+      const found = [...otherTypes].join(", ");
+      return status(found
+        ? `Only Polygon and MultiPolygon are supported, not ${found}.`
+        : "No polygon found in that file.");
+    }
 
     const cells = coveredCells(polys, manifest.resolution);
     const parents = new Set([...cells].map((c) => h3.cellToParent(c, manifest.partition_resolution)));
